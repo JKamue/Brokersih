@@ -6,7 +6,7 @@ import de.jkamue.mqtt.valueobject.TopicFilter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
 
-object SubscriptionTree {
+class SubscriptionTree {
 
     private val subscriptions = ConcurrentHashMap<ClientId, CopyOnWriteArraySet<TopicFilter>>()
     private val root = SubscriptionTreeNode()
@@ -18,7 +18,7 @@ object SubscriptionTree {
     }
 
     fun removeSubscriptionsFor(clientId: ClientId) {
-        subscriptions.get(clientId)?.forEach { root.removeSubscription(clientId, it) }
+        subscriptions[clientId]?.forEach { root.removeSubscription(clientId, it) }
     }
 
     fun getSubscriptionsForTopic(topic: Topic): List<SubscriptionWithClient> {

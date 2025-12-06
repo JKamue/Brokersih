@@ -2,24 +2,25 @@ package de.jkamue.mqtt.logic
 
 import de.jkamue.mqtt.ConnectReasonCode
 import de.jkamue.mqtt.DisconnectReasonCode
+import de.jkamue.mqtt.logic.clients.ClientManager
 import de.jkamue.mqtt.logic.subscriptions.SubscriptionTree
 import de.jkamue.mqtt.logic.subscriptions.SubscriptionWithClient
 import de.jkamue.mqtt.packet.*
-import de.jkamue.mqtt.valueobject.ClientId
 import de.jkamue.mqtt.valueobject.QualityOfService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import java.util.concurrent.ConcurrentHashMap
 
 class MqttServer(
-    scope: CoroutineScope, val config: MqttServerConfig,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+    scope: CoroutineScope,
+    private val config: MqttServerConfig,
+    dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val clientManager: ClientManager = ClientManager(),
+    private val subscriptionTree: SubscriptionTree = SubscriptionTree(),
 ) {
     val commandChannel = Channel<ServerCommand>(Channel.UNLIMITED)
-    private val clients = ConcurrentHashMap<ClientId, Client>()
 
     init {
         scope.launch(dispatcher) {
@@ -27,20 +28,23 @@ class MqttServer(
                 when (command) {
                     is ClientConnected -> {
                         val client = Client(command.clientId, command.outgoing)
-                        val disconnectMsg = OutgoingMessage(DisconnectPacket(DisconnectReasonCode.SESSION_TAKEN_OVER))
-                        clients[command.clientId]?.sendChannel?.trySend(disconnectMsg)
-                        clients[command.clientId] = client
+                        if (clientManager.clientExists(client.id)) {
+                            val disconnectMsg =
+                                OutgoingMessage(DisconnectPacket(DisconnectReasonCode.SESSION_TAKEN_OVER))
+                            clientManager.getById(client.id)?.sendChannel?.trySend(disconnectMsg)
+                        }
+                        clientManager.addClient(client)
                     }
 
                     is ClientDisconnected -> {
-                        SubscriptionTree.removeSubscriptionsFor(command.clientId)
-                        clients.remove(command.clientId)
+                        subscriptionTree.removeSubscriptionsFor(command.clientId)
+                        clientManager.removeClient(command.clientId)
                         // TODO: Publish Will message by sending to other client channels
                     }
 
                     is DisconnectClient -> {
                         val disconnectMsg = OutgoingMessage(DisconnectPacket(command.reasonCode))
-                        clients[command.clientId]?.sendChannel?.send(disconnectMsg)
+                        clientManager.getById(command.clientId)?.sendChannel?.trySend(disconnectMsg)
                     }
 
                     is PacketReceived -> {
@@ -57,9 +61,9 @@ class MqttServer(
 
     private suspend fun handlePacket(command: PacketReceived) {
         val (clientId, packet, payloadManager) = command
-        val client = clients[clientId] ?: run {
+        val client = clientManager.getById(command.clientId) ?: run {
             // If client is not found, we must release the payload
-            payloadManager.getReleaseAction()()
+            payloadManager.getReleaseAction().invoke()
             return
         }
 
@@ -93,14 +97,14 @@ class MqttServer(
                 client.sendChannel.send(OutgoingMessage(response))
                 payloadManager.getReleaseAction().invoke()
                 packet.subscriptions.forEach {
-                    SubscriptionTree.addSubscription(
+                    subscriptionTree.addSubscription(
                         SubscriptionWithClient(it, packet.subscriptionIdentifier, clientId)
                     )
                 }
             }
 
             is PublishPacket -> {
-                val subscriptions = SubscriptionTree.getSubscriptionsForTopic(packet.topic)
+                val subscriptions = subscriptionTree.getSubscriptionsForTopic(packet.topic)
                 if (subscriptions.isEmpty()) {
                     payloadManager.getReleaseAction().invoke()
                     return
@@ -113,7 +117,7 @@ class MqttServer(
                             packet
                         }
                         val message = OutgoingMessage(packetToSend, sharedReleaseAction)
-                        clients[it.clientId]?.sendChannel?.send(message) ?: sharedReleaseAction.invoke()
+                        clientManager.getById(it.clientId)?.sendChannel?.send(message) ?: sharedReleaseAction.invoke()
                     }
                 }
             }
