@@ -2,14 +2,21 @@ package de.jkamue.mqtt.logic
 
 import de.jkamue.mqtt.ConnectReasonCode
 import de.jkamue.mqtt.DisconnectReasonCode
+import de.jkamue.mqtt.logic.clients.ClientManager
 import de.jkamue.mqtt.logic.helpers.CoroutineTest
+import de.jkamue.mqtt.logic.helpers.TestClient
 import de.jkamue.mqtt.logic.helpers.TestMqttServerConfig
 import de.jkamue.mqtt.logic.helpers.TestServer
 import de.jkamue.mqtt.logic.helpers.packets.testConnectPacket
+import de.jkamue.mqtt.logic.subscriptions.SubscriptionTree
 import de.jkamue.mqtt.packet.ConnackPacket
 import de.jkamue.mqtt.packet.DisconnectPacket
 import de.jkamue.mqtt.valueobject.ClientId
 import de.jkamue.mqtt.valueobject.QualityOfService
+import io.mockk.confirmVerified
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -41,6 +48,55 @@ class MqttServerTest : CoroutineTest() {
                 .filterIsInstance<ConnackPacket>()
             assertEquals(1, connacksReceivedByFirstClient.size)
             assertEquals(expectedConnackPacket, connacksReceivedByFirstClient.first())
+        }
+    }
+
+    @Test
+    fun `server cleans up if client disconnects`() = coroutineTest {
+        // given
+        val clientId = ClientId("disconnectingClient")
+        val clientManager = mockk<ClientManager>(relaxUnitFun = true)
+        val subscriptionTree = mockk<SubscriptionTree>(relaxUnitFun = true)
+
+        // when
+        TestServer(this, serverConfig, clientManager, subscriptionTree).use { testServer ->
+            testServer.clientDisconnected(clientId)
+            testServer.drain()
+        }
+
+        // then
+        verify { clientManager.removeClient(clientId) }
+        verify { subscriptionTree.removeSubscriptionsFor(clientId) }
+        confirmVerified(clientManager, subscriptionTree)
+    }
+
+    @Test
+    fun `server disconnects client if instructed to`() = coroutineTest {
+        // given
+        val clientId = ClientId("clientToDisconnect")
+        TestClient(clientId).use { client ->
+            client.startCollecting(this)
+            val clientManager = mockk<ClientManager>(relaxUnitFun = true)
+            val subscriptionTree = mockk<SubscriptionTree>(relaxUnitFun = true)
+            every { clientManager.getById(clientId) } returns client.client
+            val disconnectReasonCode = DisconnectReasonCode.KEEP_ALIVE_TIMEOUT
+            val expectedDisconnectPacket = DisconnectPacket(reasonCode = disconnectReasonCode)
+
+            // when
+            TestServer(this, serverConfig, clientManager, subscriptionTree).use { testServer ->
+                testServer.disconnectClient(clientId, reasonCode = disconnectReasonCode)
+                testServer.drain()
+            }
+
+            // then
+            verify { clientManager.removeClient(clientId) }
+            verify { subscriptionTree.removeSubscriptionsFor(clientId) }
+            verify { clientManager.getById(clientId) }
+            confirmVerified(clientManager, subscriptionTree)
+            assertEquals(1, client.received.count())
+            val disconnectsReceivedByClient = client.received.map { it.packet }
+                .filterIsInstance<DisconnectPacket>()
+            assertEquals(expectedDisconnectPacket, disconnectsReceivedByClient.first())
         }
     }
 

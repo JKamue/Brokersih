@@ -1,6 +1,9 @@
 package de.jkamue.mqtt.logic.helpers
 
+import de.jkamue.mqtt.DisconnectReasonCode
 import de.jkamue.mqtt.logic.*
+import de.jkamue.mqtt.logic.clients.ClientManager
+import de.jkamue.mqtt.logic.subscriptions.SubscriptionTree
 import de.jkamue.mqtt.packet.Packet
 import de.jkamue.mqtt.valueobject.ClientId
 import kotlinx.coroutines.CoroutineDispatcher
@@ -13,7 +16,9 @@ import kotlin.coroutines.ContinuationInterceptor
 
 class TestServer(
     val scope: TestScope,
-    val config: MqttServerConfig
+    val config: MqttServerConfig,
+    val clientManager: ClientManager = ClientManager(),
+    val subscriptionTree: SubscriptionTree = SubscriptionTree()
 ) : Closeable {
 
     private val createdClients = mutableListOf<TestClientConnection>()
@@ -21,6 +26,8 @@ class TestServer(
         MqttServer(
             scope = scope,
             config = config,
+            clientManager = clientManager,
+            subscriptionTree = subscriptionTree,
             dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
         )
 
@@ -39,11 +46,18 @@ class TestServer(
         return conn
     }
 
-    fun disconnectClient(id: ClientId) {
+    fun clientDisconnected(id: ClientId) {
         scope.launch {
             server.commandChannel.send(ClientDisconnected(id))
         }
     }
+
+    fun disconnectClient(id: ClientId, reasonCode: DisconnectReasonCode) {
+        scope.launch {
+            server.commandChannel.send(DisconnectClient(id, reasonCode))
+        }
+    }
+
 
     fun sendPacket(id: ClientId, packet: Packet, payloadManager: PayloadManager = DummyPayloadManager()) {
         scope.launch {

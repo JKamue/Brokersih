@@ -16,9 +16,9 @@ import kotlinx.coroutines.launch
 class MqttServer(
     scope: CoroutineScope,
     private val config: MqttServerConfig,
-    dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val clientManager: ClientManager = ClientManager(),
     private val subscriptionTree: SubscriptionTree = SubscriptionTree(),
+    dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     val commandChannel = Channel<ServerCommand>(Channel.UNLIMITED)
 
@@ -45,6 +45,8 @@ class MqttServer(
                     is DisconnectClient -> {
                         val disconnectMsg = OutgoingMessage(DisconnectPacket(command.reasonCode))
                         clientManager.getById(command.clientId)?.sendChannel?.trySend(disconnectMsg)
+                        subscriptionTree.removeSubscriptionsFor(command.clientId)
+                        clientManager.removeClient(command.clientId)
                     }
 
                     is PacketReceived -> {
