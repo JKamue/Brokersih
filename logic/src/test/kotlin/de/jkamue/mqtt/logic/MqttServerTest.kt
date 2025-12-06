@@ -3,23 +3,24 @@ package de.jkamue.mqtt.logic
 import de.jkamue.mqtt.ConnectReasonCode
 import de.jkamue.mqtt.DisconnectReasonCode
 import de.jkamue.mqtt.logic.clients.ClientManager
-import de.jkamue.mqtt.logic.helpers.TestClient
 import de.jkamue.mqtt.logic.helpers.TestMqttServerConfig
 import de.jkamue.mqtt.logic.helpers.TestServer
 import de.jkamue.mqtt.logic.helpers.packets.testConnectPacket
 import de.jkamue.mqtt.logic.subscriptions.SubscriptionTree
 import de.jkamue.mqtt.packet.ConnackPacket
 import de.jkamue.mqtt.packet.DisconnectPacket
+import de.jkamue.mqtt.packet.PingreqPacket
+import de.jkamue.mqtt.packet.PingrespPacket
 import de.jkamue.mqtt.valueobject.ClientId
 import de.jkamue.mqtt.valueobject.QualityOfService
 import io.mockk.confirmVerified
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
 
 class MqttServerTest {
 
@@ -101,6 +102,30 @@ class MqttServerTest {
     }
 
     @Test
+    @MandatoryNormativeStatementTest("MQTT-3.12.4-1")
+    fun `server can play ping pong`() = runTest {
+        // given
+        val clientId = ClientId("pingPongClient")
+        val clientManager = mockk<ClientManager>(relaxUnitFun = true)
+
+        TestServer(this, serverConfig, clientManager).use { testServer ->
+            val client = testServer.manage(clientId)
+            client.startCollecting(this)
+            every { clientManager.getById(clientId) } returns client.client
+
+            // when
+            testServer.sendPacket(clientId, PingreqPacket)
+            testServer.drain()
+
+            // then
+            verify { clientManager.getById(clientId) }
+            confirmVerified(clientManager)
+            assertEquals(1, client.received.count())
+            assertEquals(PingrespPacket, client.received.first().packet)
+        }
+    }
+
+    @Test
     @MandatoryNormativeStatementTest("MQTT-3.1.4-3")
     fun `existing client is disconnected when new client with same id connects`() = runTest {
         TestServer(this, serverConfig).use { testServer ->
@@ -115,10 +140,8 @@ class MqttServerTest {
             testServer.drain()
 
             // then
-            val disconnectsReceivedByFirstClient = firstClient.received.map { it.packet }
-                .filterIsInstance<DisconnectPacket>()
-            assertEquals(1, disconnectsReceivedByFirstClient.size)
-            assertEquals(expectedDisconnectPacket, disconnectsReceivedByFirstClient.first())
+            assertEquals(1, firstClient.received.size)
+            assertEquals(expectedDisconnectPacket, firstClient.received.first().packet)
             assertTrue(secondClient.received.none { it.packet is DisconnectPacket })
         }
     }
