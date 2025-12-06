@@ -3,7 +3,6 @@ package de.jkamue.mqtt.logic
 import de.jkamue.mqtt.ConnectReasonCode
 import de.jkamue.mqtt.DisconnectReasonCode
 import de.jkamue.mqtt.logic.clients.ClientManager
-import de.jkamue.mqtt.logic.helpers.CoroutineTest
 import de.jkamue.mqtt.logic.helpers.TestClient
 import de.jkamue.mqtt.logic.helpers.TestMqttServerConfig
 import de.jkamue.mqtt.logic.helpers.TestServer
@@ -20,13 +19,14 @@ import io.mockk.verify
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
-class MqttServerTest : CoroutineTest() {
+class MqttServerTest {
 
     private val serverConfig = TestMqttServerConfig()
 
     @Test
-    fun `client can connect to server`() = coroutineTest {
+    fun `client can connect to server`() = runTest {
         TestServer(this, serverConfig).use { testServer ->
             // given
             val clientId = ClientId("newClient")
@@ -52,7 +52,7 @@ class MqttServerTest : CoroutineTest() {
     }
 
     @Test
-    fun `server cleans up if client disconnects`() = coroutineTest {
+    fun `server cleans up if client disconnects`() = runTest {
         // given
         val clientId = ClientId("disconnectingClient")
         val clientManager = mockk<ClientManager>(relaxUnitFun = true)
@@ -71,22 +71,22 @@ class MqttServerTest : CoroutineTest() {
     }
 
     @Test
-    fun `server disconnects client if instructed to`() = coroutineTest {
+    fun `server disconnects client if instructed to`() = runTest {
         // given
         val clientId = ClientId("clientToDisconnect")
-        TestClient(clientId).use { client ->
+        val clientManager = mockk<ClientManager>(relaxUnitFun = true)
+        val subscriptionTree = mockk<SubscriptionTree>(relaxUnitFun = true)
+        val disconnectReasonCode = DisconnectReasonCode.KEEP_ALIVE_TIMEOUT
+        val expectedDisconnectPacket = DisconnectPacket(reasonCode = disconnectReasonCode)
+
+        TestServer(this, serverConfig, clientManager, subscriptionTree).use { testServer ->
+            val client = testServer.manage(clientId)
             client.startCollecting(this)
-            val clientManager = mockk<ClientManager>(relaxUnitFun = true)
-            val subscriptionTree = mockk<SubscriptionTree>(relaxUnitFun = true)
             every { clientManager.getById(clientId) } returns client.client
-            val disconnectReasonCode = DisconnectReasonCode.KEEP_ALIVE_TIMEOUT
-            val expectedDisconnectPacket = DisconnectPacket(reasonCode = disconnectReasonCode)
 
             // when
-            TestServer(this, serverConfig, clientManager, subscriptionTree).use { testServer ->
-                testServer.disconnectClient(clientId, reasonCode = disconnectReasonCode)
-                testServer.drain()
-            }
+            testServer.disconnectClient(clientId, reasonCode = disconnectReasonCode)
+            testServer.drain()
 
             // then
             verify { clientManager.removeClient(clientId) }
@@ -102,7 +102,7 @@ class MqttServerTest : CoroutineTest() {
 
     @Test
     @MandatoryNormativeStatementTest("MQTT-3.1.4-3")
-    fun `existing client is disconnected when new client with same id connects`() = coroutineTest {
+    fun `existing client is disconnected when new client with same id connects`() = runTest {
         TestServer(this, serverConfig).use { testServer ->
             // given
             val clientId = ClientId("sameForTwoClients")

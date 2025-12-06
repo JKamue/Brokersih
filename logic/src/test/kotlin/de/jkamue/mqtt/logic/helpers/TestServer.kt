@@ -21,7 +21,7 @@ class TestServer(
     val subscriptionTree: SubscriptionTree = SubscriptionTree()
 ) : Closeable {
 
-    private val createdClients = mutableListOf<TestClientConnection>()
+    private val managedCloseables = mutableListOf<TestClient>()
     val server =
         MqttServer(
             scope = scope,
@@ -31,9 +31,9 @@ class TestServer(
             dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
         )
 
-    fun connectClient(id: ClientId): TestClientConnection {
-        val conn = TestClientConnection()
-        createdClients.add(conn)
+    fun connectClient(id: ClientId): TestClient {
+        val conn = TestClient(id)
+        managedCloseables.add(conn)
         conn.startCollecting(scope)
         scope.launch {
             server.commandChannel.send(
@@ -44,6 +44,12 @@ class TestServer(
             )
         }
         return conn
+    }
+
+    fun manage(clientId: ClientId): TestClient {
+        val client = TestClient(clientId)
+        managedCloseables.add(client)
+        return client
     }
 
     fun clientDisconnected(id: ClientId) {
@@ -74,7 +80,7 @@ class TestServer(
     }
 
     override fun close() {
-        createdClients.forEach { it.close() }
+        managedCloseables.forEach { it.close() }
         server.close()
     }
 }
