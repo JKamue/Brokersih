@@ -7,18 +7,22 @@ import de.jkamue.mqtt.logic.subscriptions.SubscriptionWithClient
 import de.jkamue.mqtt.packet.*
 import de.jkamue.mqtt.valueobject.ClientId
 import de.jkamue.mqtt.valueobject.QualityOfService
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-class MqttServer(scope: CoroutineScope, val config: MqttServerConfig) {
+class MqttServer(
+    scope: CoroutineScope, val config: MqttServerConfig,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+) {
     val commandChannel = Channel<ServerCommand>(Channel.UNLIMITED)
     private val clients = ConcurrentHashMap<ClientId, Client>()
 
     init {
-        scope.launch(Dispatchers.Default) {
+        scope.launch(dispatcher) {
             for (command in commandChannel) {
                 when (command) {
                     is ClientConnected -> {
@@ -30,7 +34,6 @@ class MqttServer(scope: CoroutineScope, val config: MqttServerConfig) {
 
                     is ClientDisconnected -> {
                         SubscriptionTree.removeSubscriptionsFor(command.clientId)
-                        println(SubscriptionTree)
                         clients.remove(command.clientId)
                         // TODO: Publish Will message by sending to other client channels
                     }
@@ -46,6 +49,10 @@ class MqttServer(scope: CoroutineScope, val config: MqttServerConfig) {
                 }
             }
         }
+    }
+
+    fun close() {
+        commandChannel.close()
     }
 
     private suspend fun handlePacket(command: PacketReceived) {
