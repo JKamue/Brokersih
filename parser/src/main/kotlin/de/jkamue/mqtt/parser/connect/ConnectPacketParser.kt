@@ -1,13 +1,14 @@
 package de.jkamue.mqtt.parser.connect
 
+import de.jkamue.mqtt.MalformedPacketMqttException
 import de.jkamue.mqtt.packet.ConnectPacket
+import de.jkamue.mqtt.parser.MQTTByteBuffer
+import de.jkamue.mqtt.parser.connect.properties.ConnectPropertiesParser
+import de.jkamue.mqtt.parser.connect.will.WillParser
 import de.jkamue.mqtt.valueobject.ClientId
 import de.jkamue.mqtt.valueobject.Interval
 import de.jkamue.mqtt.valueobject.Password
 import de.jkamue.mqtt.valueobject.Username
-import de.jkamue.mqtt.parser.MQTTByteBuffer
-import de.jkamue.mqtt.parser.connect.properties.ConnectPropertiesParser
-import de.jkamue.mqtt.parser.connect.will.WillParser
 
 internal object ConnectPacketParser {
     fun parseConnectPacket(buffer: MQTTByteBuffer): ConnectPacket {
@@ -31,6 +32,9 @@ internal object ConnectPacketParser {
 
         val username = if (flags.userName) Username(buffer.getEncodedString()) else null
         val password = if (flags.password) Password(buffer.getEncodedString()) else null
+
+        if (buffer.remaining() > 0)
+            throw MalformedPacketMqttException("${buffer.remaining()} bytes left over after CONNECT payload")
 
         return ConnectPacket(
             protocolName = protocolName,
