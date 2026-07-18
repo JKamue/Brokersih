@@ -16,8 +16,8 @@ import io.ktor.server.config.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import mqtt.encoder.PacketEncoder
-import mqtt.parser.PacketParser
+import de.jkamue.mqtt.encoder.PacketEncoder
+import de.jkamue.mqtt.parser.PacketParser
 import java.nio.ByteBuffer
 import kotlin.system.measureNanoTime
 import kotlin.time.Duration.Companion.seconds
