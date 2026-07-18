@@ -43,7 +43,7 @@ fun main() {
 
         val mqttServer = MqttServer(serverScope, brokerishConfig)
 
-        aSocket(selectorManager).tcp().bind("127.0.0.1", 9002).use { serverSocket ->
+        aSocket(selectorManager).tcp().bind("127.0.0.1", brokerishConfig.port).use { serverSocket ->
             log("MQTT-listening server is running at ${serverSocket.localAddress}")
 
             while (true) {
