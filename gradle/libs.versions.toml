@@ -2,6 +2,7 @@
 kotlin = "2.2.20"
 ktor = "3.3.0"
 logback = "1.4.14"
+kotlin-logging = "8.0.4"
 
 [libraries]
 ktor-network-tls = { module = "io.ktor:ktor-network-tls", version.ref = "ktor" }
@@ -11,6 +12,7 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 ktor-server-config-yaml = { module = "io.ktor:ktor-server-config-yaml", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

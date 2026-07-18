@@ -1,3 +1,5 @@
+package de.jkamue.mqtt.server
+
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 

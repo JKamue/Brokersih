@@ -1,4 +1,4 @@
-package de.jkamue
+package de.jkamue.mqtt.server
 
 import de.jkamue.mqtt.valueobject.Interval
 

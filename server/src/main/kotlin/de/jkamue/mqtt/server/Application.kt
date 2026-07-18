@@ -1,8 +1,5 @@
-package de.jkamue
+package de.jkamue.mqtt.server
 
-import BrokerishConfig
-import BufferPool
-import ReferenceCountedRelease
 import de.jkamue.mqtt.DisconnectReasonCode
 import de.jkamue.mqtt.KeepAliveTimeoutMqttException
 import de.jkamue.mqtt.MalformedPacketMqttException
@@ -12,6 +9,7 @@ import de.jkamue.mqtt.packet.ControlPacketType
 import de.jkamue.mqtt.packet.DisconnectPacket
 import de.jkamue.mqtt.packet.Packet
 import de.jkamue.mqtt.valueobject.ClientId
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.server.config.*
@@ -23,6 +21,8 @@ import mqtt.parser.PacketParser
 import java.nio.ByteBuffer
 import kotlin.system.measureNanoTime
 import kotlin.time.Duration.Companion.seconds
+
+private val logger = KotlinLogging.logger {}
 
 /**
  * Concrete implementation of PayloadManager that manages a leased ByteBuffer.
@@ -44,14 +44,14 @@ fun main() {
         val mqttServer = MqttServer(serverScope, brokerishConfig)
 
         aSocket(selectorManager).tcp().bind("127.0.0.1", brokerishConfig.port).use { serverSocket ->
-            log("MQTT-listening server is running at ${serverSocket.localAddress}")
+            logger.info { "MQTT-listening server is running at ${serverSocket.localAddress}" }
 
             while (true) {
                 val socket = serverSocket.accept()
                 val remoteAddress = socket.remoteAddress
 
                 serverScope.launch {
-                    log("Accepted connection from $remoteAddress")
+                    logger.info { "Accepted connection from $remoteAddress" }
                     val readChannel = socket.openReadChannel()
                     val writeChannel = socket.openWriteChannel(autoFlush = false)
                     val outgoingPackets = Channel<OutgoingMessage>(Channel.BUFFERED)
@@ -62,7 +62,7 @@ fun main() {
                     try {
                         val packetAndBuffer = readMqttPacket(readChannel)
                         if (packetAndBuffer == null || packetAndBuffer.first !is ConnectPacket) {
-                            log("First packet was not CONNECT, closing connection.")
+                            logger.info { "First packet was not CONNECT, closing connection." }
                             BufferPool.release(packetAndBuffer!!.second)
                             socket.close()
                             return@launch
@@ -83,7 +83,7 @@ fun main() {
                         // Writer coroutine
                         launch {
                             for (message in outgoingPackets) {
-                                log("Sending packet ${message.packet.packetType} to $clientId.")
+                                logger.debug { "Sending packet ${message.packet.packetType} to $clientId." }
                                 val encoded = PacketEncoder.encodeScatter(message.packet)
                                 sendScatter(writeChannel, encoded)
                                 message.afterSend()
@@ -111,7 +111,7 @@ fun main() {
                                 )
                             }
                         } catch (_: KeepAliveTimeoutMqttException) {
-                            log("No packet received within keepalive $keepAlive including tolerance for $remoteAddress")
+                            logger.info { "No packet received within keepalive $keepAlive including tolerance for $remoteAddress" }
                             clientId.let {
                                 mqttServer.commandChannel.send(
                                     DisconnectClient(
@@ -123,11 +123,11 @@ fun main() {
                             delay(1000)
                         }
                     } catch (e: Exception) {
-                        log("Error in client coroutine for $remoteAddress: ${e.message}")
+                        logger.warn { "Error in client coroutine for $remoteAddress: ${e.message}" }
                         clientId?.let { mqttServer.commandChannel.send(ClientDisconnected(it)) }
                         delay(1000)
                     } finally {
-                        log("Closing connection for $remoteAddress")
+                        logger.info { "Closing connection for $remoteAddress" }
                         outgoingPackets.close()
                         socket.close()
                         buffer?.let { BufferPool.release(it) }
@@ -151,16 +151,16 @@ internal suspend fun readMqttPacket(channel: ByteReadChannel): Pair<Packet, Byte
         val controlPacketType = try {
             readControlPacketType(channel)
         } catch (e: java.io.EOFException) {
-            log("readMqttPacket: EOF while reading first byte -> connection closed by peer")
+            logger.debug { "readMqttPacket: EOF while reading first byte -> connection closed by peer" }
             return null
         }
-        log("Starting to receive packet of type $controlPacketType")
+        logger.debug { "Starting to receive packet of type $controlPacketType" }
 
         buffer = BufferPool.lease()
         val content = try {
             getPacketContent(channel, buffer)
         } catch (e: java.io.EOFException) {
-            log("readMqttPacket: EOF while reading remaining length / payload -> connection closed by peer")
+            logger.debug { "readMqttPacket: EOF while reading remaining length / payload -> connection closed by peer" }
             BufferPool.release(buffer)
             return null
         }
@@ -170,7 +170,7 @@ internal suspend fun readMqttPacket(channel: ByteReadChannel): Pair<Packet, Byte
             packet = PacketParser.parsePacket(content, controlPacketType)
         }
         val parsingTimeMicros = parsingTimeNanos / 1000.0
-        log("Parsing took $parsingTimeNanos ns (or $parsingTimeMicros µs).")
+        logger.debug { "Parsing took $parsingTimeNanos ns (or $parsingTimeMicros µs)." }
         return Pair(packet, buffer)
     } catch (ex: MalformedPacketMqttException) {
         // rethrow known MQTT protocol errors to be handled by caller if desired
@@ -179,7 +179,7 @@ internal suspend fun readMqttPacket(channel: ByteReadChannel): Pair<Packet, Byte
     } catch (ex: Throwable) {
         // unexpected errors: log and rethrow so outer handler can close the socket and print stack trace
         buffer?.let { BufferPool.release(buffer) }
-        log("readMqttPacket: unexpected error: ${ex.message}")
+        logger.debug { "readMqttPacket: unexpected error: ${ex.message}" }
         throw ex
     }
 }
@@ -222,8 +222,4 @@ suspend fun sendScatter(socketWrite: ByteWriteChannel, parts: Array<ByteBuffer>)
         part.rewind()
         socketWrite.writeFully(part)
     }
-}
-
-private fun log(msg: String) {
-    AsyncLogger.log(msg)
 }

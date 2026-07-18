@@ -1,3 +1,5 @@
+package de.jkamue.mqtt.server
+
 import de.jkamue.mqtt.logic.MqttServerConfig
 import de.jkamue.mqtt.valueobject.QualityOfService
 import io.ktor.server.config.*
