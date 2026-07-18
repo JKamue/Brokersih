@@ -4,10 +4,11 @@ plugins {
 
 dependencies {
     implementation(project(":packets"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    testImplementation(kotlin("test"))
     testImplementation(project(":packets"))
-    testImplementation("io.mockk:mockk:1.14.7")
+
+    implementation(libs.kotlinx.coroutines.core)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
 }
