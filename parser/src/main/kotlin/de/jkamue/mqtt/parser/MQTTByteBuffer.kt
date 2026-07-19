@@ -3,10 +3,15 @@ package de.jkamue.mqtt.parser
 import de.jkamue.mqtt.MalformedPacketMqttException
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 
 private val decoderThreadLocal = ThreadLocal.withInitial {
     Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
 }
+
+private val charBufferThreadLocal = ThreadLocal.withInitial { CharBuffer.allocate(65535) }
 
 @JvmInline
 internal value class MQTTByteBuffer(val buffer: ByteBuffer) {
@@ -17,6 +22,54 @@ internal value class MQTTByteBuffer(val buffer: ByteBuffer) {
 
         fun wrap(buffer: ByteBuffer): MQTTByteBuffer =
             MQTTByteBuffer(buffer.asReadOnlyBuffer())
+
+        fun validateMqttString(src: ByteBuffer): CharBuffer {
+            val dec = decoderThreadLocal.get().reset()
+            val cb = charBufferThreadLocal.get().also { it.clear() }
+
+            try {
+                dec.decode(src, cb, true).let {
+                    if (it.isOverflow) throw IllegalStateException("...")
+                    else if (it.isError) it.throwException()
+                }
+                dec.flush(cb)
+                cb.flip()
+            } catch (e: CharacterCodingException) {
+                throw MalformedPacketMqttException("ill-formed UTF-8 [MQTT-1.5.4-1] cause: ${e.message}")
+            }
+
+            val a = cb.array()
+            val off = cb.arrayOffset() + cb.position()
+            val end = off + cb.remaining()
+
+            var i = off
+            while (i < end) {
+                val cp = Character.codePointAt(a, i, end)
+
+                // fast path
+                if (cp in 0x20..0x7E) {
+                    i++; continue
+                }
+
+                when {
+                    cp == 0x0000 ->
+                        throw MalformedPacketMqttException("U+0000 not allowed [MQTT-1.5.4-2]")
+
+                    cp < 0x20 || cp in 0x7F..0x9F ->
+                        throw MalformedPacketMqttException("control character U+%04X".format(cp))
+
+                    cp in 0xFDD0..0xFDEF ->
+                        throw MalformedPacketMqttException("noncharacter U+%04X".format(cp))
+
+                    (cp and 0xFFFE) == 0xFFFE ->
+                        throw MalformedPacketMqttException("noncharacter U+%04X".format(cp))
+                }
+
+                i += Character.charCount(cp)
+            }
+
+            return cb
+        }
     }
 
     private fun ensureRemaining(needed: Int) {
@@ -61,8 +114,10 @@ internal value class MQTTByteBuffer(val buffer: ByteBuffer) {
     }
 
     fun getString(length: Int? = null): String {
-        val byteSlice = getNextBytes(length ?: buffer.remaining())
-        return decoderThreadLocal.get().decode(byteSlice).toString()
+        val n = length ?: buffer.remaining()
+        if (n == 0) return ""
+        val src = getNextBytes(n)
+        return validateMqttString(src).toString()
     }
 
     // Large messages like the payload that the logic will only ever pass on

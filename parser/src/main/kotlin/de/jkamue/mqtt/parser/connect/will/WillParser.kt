@@ -22,7 +22,9 @@ internal object WillParser {
         val willProperties = WillPropertyParser.parseConnectWillProperties(willPropertiesBuffer)
 
         // Create copy since will is kept in Memory
-        val topicString = buffer.getBinaryData().createCopy()
+        val originalTopicString = buffer.getBinaryData()
+        MQTTByteBuffer.validateMqttString(originalTopicString.duplicate())
+        val topicString = originalTopicString.createCopy()
         if (topicString.remaining() == 0) {
             throw MalformedPacketMqttException("MQTT-3.1.3-11 - The Will Topic MUST be a UTF-8 Encoded String.")
         }
