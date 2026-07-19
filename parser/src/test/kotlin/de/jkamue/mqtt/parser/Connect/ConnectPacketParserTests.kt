@@ -1,8 +1,6 @@
 package de.jkamue.mqtt.parser.Connect
 
-import de.jkamue.mqtt.parser.SpecSection
-import de.jkamue.mqtt.parser.assertHexStreamParsedToPacket
-import de.jkamue.mqtt.parser.toByteBuffer
+import de.jkamue.mqtt.parser.*
 import de.jkamue.mqtt.valueobject.*
 import kotlin.test.Test
 
@@ -67,5 +65,21 @@ class ConnectPacketParserTests {
         val packet = "00044d5154540500003c0511000000000008636c69656e744964"
         val expectedParsedPacket = testConnectPacket(cleanStart = false)
         assertHexStreamParsedToPacket(packet, expectedParsedPacket)
+    }
+
+    @Test
+    @MandatoryNormativeStatementTest("MQTT-3.1.2-3")
+    fun `reserved connect flag set to 1 is malformed`() {
+        val reservedBitSet = "00044d51545405 03 003c0511000000000008636c69656e744964"
+        assertPacketMalformed(reservedBitSet)
+    }
+
+    @Test
+    @SpecSection("3.1.3")
+    fun `leftover bytes after the connect payload are malformed`() {
+        val trailingGarbage = "00044d5154540502003c0511000000000008636c69656e744964 ff"
+        val unannouncedUsername = "00044d5154540502003c0511000000000008636c69656e744964 000475736572"
+        assertPacketMalformed(trailingGarbage)
+        assertPacketMalformed(unannouncedUsername)
     }
 }
